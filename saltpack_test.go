@@ -15,12 +15,19 @@ import (
 func RawBoxKeyFromSigningKey(signingKey basic.SigningSecretKey) (*[32]byte, *[32]byte) {
 	rawSigningKey := signingKey.GetRawSecretKey()
 	signingKeyBytes := rawSigningKey[:]
-	boxPrivateKeyBytes := Ed25519PrivateKeyToCurve25519(signingKeyBytes) // convert to curve25519 private key\
+	boxPrivateKeyBytes := Ed25519PrivateKeyToCurve25519(signingKeyBytes) // convert to curve25519 private key
+	if len(boxPrivateKeyBytes) != 32 {                                   // ensure the resulting key is 32 bytes long
+		panic(fmt.Sprintf("resulting curve25519 private key is not 32 bytes long: %d", len(boxPrivateKeyBytes)))
+	}
 	boxPrivateKeyBytes32 := new([32]byte)
 	copy(boxPrivateKeyBytes32[:], boxPrivateKeyBytes[:])
 
+	// now convert the public key
 	rawPublicKeyBytes := signingKey.GetPublicKey().ToKID()
 	boxPublicKeyBytes := Ed25519PublicKeyToCurve25519(rawPublicKeyBytes) // convert to curve25519 public key
+	if len(boxPublicKeyBytes) != 32 {                                    // ensure the resulting key is 32 bytes long
+		panic(fmt.Sprintf("resulting curve25519 public key is not 32 bytes long: %d", len(boxPublicKeyBytes)))
+	}
 	boxPublicKeyBytes32 := new([32]byte)
 	copy(boxPublicKeyBytes32[:], boxPublicKeyBytes[:])
 
@@ -32,7 +39,7 @@ func RawBoxKeyFromSigningKey(signingKey basic.SigningSecretKey) (*[32]byte, *[32
 func AddSigningKeyToKeyring(kr *basic.Keyring, signingKey basic.SigningSecretKey) {
 	privBytes64 := signingKey.GetRawSecretKey()
 	pubBytes := signingKey.GetPublicKey().ToKID()
-	pubBytes32 := [32]byte(pubBytes[:])
+	pubBytes32 := [32]byte(pubBytes)
 	kr.ImportSigningKey(&pubBytes32, privBytes64)
 }
 
@@ -49,7 +56,7 @@ func TestSignCryptWithKeyConversion(t *testing.T) {
 	require.NoError(t, err)
 	// signing key is the basis for the box key
 	bk1PrivBytes, bk1PubBytes := RawBoxKeyFromSigningKey(*sk1)
-	recipient1Kr.ImportBoxKey(bk1PrivBytes, bk1PubBytes)
+	recipient1Kr.ImportBoxKey(bk1PubBytes, bk1PrivBytes)
 	bk1 := recipient1Kr.GetAllBoxSecretKeys()[0]
 	require.NoError(t, err)
 
@@ -60,7 +67,7 @@ func TestSignCryptWithKeyConversion(t *testing.T) {
 	AddSigningKeyToKeyring(recipient2Kr, *sk2)
 	// signing key is the basis for the box key
 	bk2PrivBytes, bk2PubBytes := RawBoxKeyFromSigningKey(*sk2)
-	recipient2Kr.ImportBoxKey(bk2PrivBytes, bk2PubBytes)
+	recipient2Kr.ImportBoxKey(bk2PubBytes, bk2PrivBytes)
 	bk2 := recipient2Kr.GetAllBoxSecretKeys()[0]
 
 	// sender
@@ -70,7 +77,7 @@ func TestSignCryptWithKeyConversion(t *testing.T) {
 	require.NoError(t, err)
 	AddSigningKeyToKeyring(senderKr, *senderSk)
 	rawEncKeyPrivateBytes, rawEncKeyPublicBytes := RawBoxKeyFromSigningKey(*senderSk)
-	senderKr.ImportBoxKey(rawEncKeyPrivateBytes, rawEncKeyPublicBytes)
+	senderKr.ImportBoxKey(rawEncKeyPublicBytes, rawEncKeyPrivateBytes)
 
 	receiverBoxKeys := []saltpack.BoxPublicKey{
 		bk1.GetPublicKey(),
